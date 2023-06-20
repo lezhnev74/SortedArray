@@ -45,9 +45,8 @@ func (m *Meta) Remove(meta *ChunkMeta) {
 	m.chunks = m.chunks[:len(m.chunks)-1] // collapse after deletion
 }
 
-// todo: make this bulk
 func (m *Meta) Add(metas []*ChunkMeta) {
-	newMeta := make([]*ChunkMeta, len(m.chunks), len(m.chunks)+len(metas))
+	newMeta := make([]*ChunkMeta, len(m.chunks), len(m.chunks)+len(metas)) // allocate new slice
 	copy(newMeta, m.chunks)
 
 	for _, meta := range metas {
@@ -80,11 +79,9 @@ func (m *Meta) Add(metas []*ChunkMeta) {
 		}
 
 		// make insertion
-		//copy(newMeta, m.chunks[:pos])
-		//copy(newMeta[pos+1:], m.chunks[pos:])
-		if pos == len(newMeta) {
-			newMeta = append(newMeta, meta)
-		} else {
+		newMeta = append(newMeta, meta) // extend the size of metas (within preallocated capacity)
+		if pos != len(newMeta) {
+			// if the pos is not at the end, rearrange the slice
 			copy(newMeta[pos+1:], newMeta[pos:])
 			newMeta[pos] = meta
 		}
@@ -93,36 +90,10 @@ func (m *Meta) Add(metas []*ChunkMeta) {
 	m.chunks = newMeta
 }
 
-// findPosForMeta applies binary search to find a position where the chunk SHOULD be
-func findPosForMeta(s []*ChunkMeta, item *ChunkMeta) (int, bool) {
-	return slices.BinarySearchFunc[*ChunkMeta, *ChunkMeta](s, item, func(a, b *ChunkMeta) int {
-		if a.min == b.min {
-			return 0
-		}
-		if a.min < b.min {
-			return -1
-		}
-		return 1
-	})
-}
-
-// findPosForItem applies binary search to find a position where the item's chunk should be
-func (m *Meta) findPosForItem(item uint32) (int, bool) {
-	return slices.BinarySearchFunc[*ChunkMeta, uint32](m.chunks, item, func(a *ChunkMeta, i uint32) int {
-		if a.contains(i) {
-			return 0
-		}
-		if a.max < item {
-			return -1
-		}
-		return 1
-	})
-}
-
 // FindRelevantForRead return a link to a chunk description that CAN contains the item
 // null means that no chunk CAN contain this item (used in Search)
 func (m *Meta) FindRelevantForRead(item uint32) *ChunkMeta {
-	pos, found := m.findPosForItem(item)
+	pos, found := findPosForItem(m.chunks, item)
 	if !found {
 		return nil
 	}
@@ -130,10 +101,10 @@ func (m *Meta) FindRelevantForRead(item uint32) *ChunkMeta {
 }
 
 // FindRelevantForInsert returns possible chunks that can be used for insertion
-// that includes ones that include item, or surround the item
+// that includes ones that include the item via [min,max], or surround the item (chunk +item+ chunk)
 func (m *Meta) FindRelevantForInsert(item uint32) []*ChunkMeta {
 	ret := make([]*ChunkMeta, 0, 2)
-	pos, found := m.findPosForItem(item)
+	pos, found := findPosForItem(m.chunks, item)
 	if found {
 		ret = append(ret, m.chunks[pos])
 		return ret
@@ -282,4 +253,30 @@ func UnserializeMeta(data []byte) (*Meta, error) {
 	}
 
 	return meta, nil
+}
+
+// findPosForMeta applies binary search to find a position where the chunk SHOULD be
+func findPosForMeta(s []*ChunkMeta, item *ChunkMeta) (int, bool) {
+	return slices.BinarySearchFunc[*ChunkMeta, *ChunkMeta](s, item, func(a, b *ChunkMeta) int {
+		if a.min == b.min {
+			return 0
+		}
+		if a.min < b.min {
+			return -1
+		}
+		return 1
+	})
+}
+
+// findPosForItem applies binary search to find a position where the item's chunk should be
+func findPosForItem(s []*ChunkMeta, item uint32) (int, bool) {
+	return slices.BinarySearchFunc[*ChunkMeta, uint32](s, item, func(a *ChunkMeta, i uint32) int {
+		if a.contains(i) {
+			return 0
+		}
+		if a.max < item {
+			return -1
+		}
+		return 1
+	})
 }

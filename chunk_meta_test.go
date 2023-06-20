@@ -12,10 +12,12 @@ func TestMetaBasicAPI(t *testing.T) {
 	require.EqualValues(t, 0, nextId)
 
 	c1 := &ChunkMeta{nextId, 0, 1, 1}
+	c2 := &ChunkMeta{nextId, 999, 1111, 1}
 	meta.Add([]*ChunkMeta{c1})
 	require.EqualValues(t, 1, meta.TakeNextId())
 
 	meta.Remove(c1)
+	meta.Remove(c2) // non existent, a no-op
 	require.Len(t, meta.chunks, 0)
 }
 
@@ -24,19 +26,28 @@ func TestAddBulk(t *testing.T) {
 	nextId := meta.TakeNextId()
 	require.EqualValues(t, 0, nextId)
 
-	c1 := &ChunkMeta{nextId, 0, 1, 1}
-	c2 := &ChunkMeta{nextId, 2, 3, 1}
+	// First add
+	c1 := &ChunkMeta{nextId, 10, 15, 1}
+	c2 := &ChunkMeta{nextId, 20, 25, 1}
 	meta.Add([]*ChunkMeta{c1, c2})
-
 	require.EqualValues(t, []*ChunkMeta{c1, c2}, meta.chunks)
+
+	// Add items to before, in the middle and after existing chunks
+	c3 := &ChunkMeta{nextId, 0, 1, 1}   // before
+	c4 := &ChunkMeta{nextId, 16, 17, 1} // in the middle
+	c5 := &ChunkMeta{nextId, 30, 31, 1} // after
+	meta.Add([]*ChunkMeta{c3, c4, c5})
+	require.EqualValues(t, []*ChunkMeta{c3, c1, c4, c2, c5}, meta.chunks)
 }
 
 func TestMetaOverlapProtection(t *testing.T) {
 	meta := NewMeta()
 	meta.Add([]*ChunkMeta{&ChunkMeta{meta.TakeNextId(), 2, 4, 2}})
+	require.Panics(t, func() { meta.Add([]*ChunkMeta{&ChunkMeta{meta.TakeNextId(), 2, 4, 2}}) }) // exact match
 	require.Panics(t, func() { meta.Add([]*ChunkMeta{&ChunkMeta{meta.TakeNextId(), 1, 2, 2}}) }) // left overlap
 	require.Panics(t, func() { meta.Add([]*ChunkMeta{&ChunkMeta{meta.TakeNextId(), 3, 3, 2}}) }) // middle overlap
 	require.Panics(t, func() { meta.Add([]*ChunkMeta{&ChunkMeta{meta.TakeNextId(), 4, 6, 2}}) }) // right overlap
+	require.Panics(t, func() { meta.Add([]*ChunkMeta{&ChunkMeta{meta.TakeNextId(), 9, 0, 1}}) }) // min-max violation
 }
 
 func TestMetaSearchRelevantForRead(t *testing.T) {

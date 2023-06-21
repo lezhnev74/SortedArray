@@ -9,7 +9,7 @@ func TestInMemoryChunkStorage(t *testing.T) {
 	storage := NewInMemoryChunkStorage()
 
 	// Read:
-	chunks, _ := storage.Read([]int{1, 2})
+	chunks, _ := storage.Read([]uint32{1, 2})
 	require.Equal(t, 2, len(chunks))
 	require.Nil(t, chunks[1])
 	require.Nil(t, chunks[2])
@@ -19,13 +19,13 @@ func TestInMemoryChunkStorage(t *testing.T) {
 	chunks[2] = NewChunk([]uint32{300, 400})
 	storage.Save(chunks)
 
-	chunks2, _ := storage.Read([]int{1, 2})
+	chunks2, _ := storage.Read([]uint32{1, 2})
 	require.Equal(t, 2, len(chunks2))
 	require.EqualValues(t, chunks, chunks2)
 
 	// Remove:
-	storage.Remove([]int{1})
-	chunks3, _ := storage.Read([]int{1, 2})
+	storage.Remove([]uint32{1})
+	chunks3, _ := storage.Read([]uint32{1, 2})
 	require.Equal(t, 2, len(chunks3))
 	require.Nil(t, chunks3[1])
 	require.EqualValues(t, chunks[2], chunks3[2])

@@ -21,21 +21,33 @@ func TestMetaBasicAPI(t *testing.T) {
 	require.Len(t, meta.chunks, 0)
 }
 
+func TestGetChunkById(t *testing.T) {
+	meta := NewMeta()
+	c1 := &ChunkMeta{meta.TakeNextId(), 10, 15, 1}
+	c2 := &ChunkMeta{meta.TakeNextId(), 20, 25, 1}
+	meta.Add([]*ChunkMeta{c1, c2})
+
+	c := meta.GetChunkById(c1.id)
+	require.EqualValues(t, *c1, *c)
+	c = meta.GetChunkById(500)
+	require.Nil(t, c)
+}
+
 func TestAddBulk(t *testing.T) {
 	meta := NewMeta()
 	nextId := meta.TakeNextId()
-	require.EqualValues(t, 0, nextId)
+	require.EqualValues(t, 0, nextId) // starts from 0
 
 	// First add
 	c1 := &ChunkMeta{nextId, 10, 15, 1}
-	c2 := &ChunkMeta{nextId, 20, 25, 1}
+	c2 := &ChunkMeta{meta.TakeNextId(), 20, 25, 1}
 	meta.Add([]*ChunkMeta{c1, c2})
 	require.EqualValues(t, []*ChunkMeta{c1, c2}, meta.chunks)
 
 	// Add items to before, in the middle and after existing chunks
-	c3 := &ChunkMeta{nextId, 0, 1, 1}   // before
-	c4 := &ChunkMeta{nextId, 16, 17, 1} // in the middle
-	c5 := &ChunkMeta{nextId, 30, 31, 1} // after
+	c3 := &ChunkMeta{meta.TakeNextId(), 0, 1, 1}   // before
+	c4 := &ChunkMeta{meta.TakeNextId(), 16, 17, 1} // in the middle
+	c5 := &ChunkMeta{meta.TakeNextId(), 30, 31, 1} // after
 	meta.Add([]*ChunkMeta{c3, c4, c5})
 	require.EqualValues(t, []*ChunkMeta{c3, c1, c4, c2, c5}, meta.chunks)
 }
@@ -66,6 +78,40 @@ func TestMetaSearchRelevantForRead(t *testing.T) {
 
 	relevantChunk = meta.FindRelevantForRead(24)
 	require.EqualValues(t, chunk2, *relevantChunk)
+}
+
+func TestMetaSearchRelevantForReadRange(t *testing.T) {
+	meta := NewMeta()
+	chunk1 := ChunkMeta{meta.TakeNextId(), 10, 15, 2}
+	chunk2 := ChunkMeta{meta.TakeNextId(), 20, 25, 2}
+	meta.Add([]*ChunkMeta{&chunk1})
+	meta.Add([]*ChunkMeta{&chunk2})
+
+	type test struct {
+		min, max       uint32
+		expectedResult []*ChunkMeta
+	}
+	tests := []test{
+		// Miss:
+		{0, 5, nil},   // range before all chunks
+		{16, 19, nil}, // range in between chunks
+		{30, 40, nil}, // range after all chunks
+		// Hit:
+		{0, 10, []*ChunkMeta{&chunk1}},           // range left boundary overlap
+		{0, 13, []*ChunkMeta{&chunk1}},           // range left overlap
+		{10, 13, []*ChunkMeta{&chunk1}},          // range inner overlap
+		{11, 17, []*ChunkMeta{&chunk1}},          // range right overlap
+		{15, 17, []*ChunkMeta{&chunk1}},          // range right boundary overlap
+		{14, 21, []*ChunkMeta{&chunk1, &chunk2}}, // range two chunk partial overlap
+		{0, 100, []*ChunkMeta{&chunk1, &chunk2}}, // range total overlap
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("min/max: %d/%d", tt.min, tt.max), func(t *testing.T) {
+			relevantChunks := meta.FindRelevantForReadRange(tt.min, tt.max)
+			require.EqualValues(t, tt.expectedResult, relevantChunks)
+		})
+	}
 }
 
 func TestMetaSearchRelevantForInsert(t *testing.T) {

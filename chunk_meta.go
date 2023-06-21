@@ -36,6 +36,15 @@ func (m *Meta) TakeNextId() (id uint32) {
 	return
 }
 
+func (m *Meta) GetChunkById(id uint32) *ChunkMeta {
+	for _, meta := range m.chunks {
+		if meta.id == id {
+			return meta
+		}
+	}
+	return nil
+}
+
 func (m *Meta) Remove(meta *ChunkMeta) {
 	pos, exists := findPosForMeta(m.chunks, meta)
 	if !exists {
@@ -98,6 +107,22 @@ func (m *Meta) FindRelevantForRead(item uint32) *ChunkMeta {
 		return nil
 	}
 	return m.chunks[pos]
+}
+
+// FindRelevantForReadRange return does the same as FindRelevantForRead but for a range
+func (m *Meta) FindRelevantForReadRange(min, max uint32) []*ChunkMeta {
+	minPos, _ := findPosForItem(m.chunks, min)
+	if minPos == len(m.chunks) { // no match
+		return nil
+	}
+	maxPos, exists := findPosForItem(m.chunks[minPos:], max)
+	if !exists {
+		maxPos--
+	}
+	if maxPos < minPos {
+		return nil
+	}
+	return m.chunks[minPos : maxPos+1]
 }
 
 // FindRelevantForInsert returns possible chunks that can be used for insertion

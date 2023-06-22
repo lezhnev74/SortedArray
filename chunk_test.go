@@ -52,6 +52,18 @@ func TestAdd(t *testing.T) {
 		expectedSlice           []uint32
 	}
 	tests := []test{
+		{ // duplicates
+			[]uint32{},
+			[]uint32{7, 7, 7},
+			1,
+			[]uint32{7},
+		},
+		{ // duplicates
+			[]uint32{},
+			[]uint32{9, 7, 7},
+			2,
+			[]uint32{7, 9},
+		},
 		{ // add left
 			[]uint32{10, 20, 30},
 			[]uint32{9},

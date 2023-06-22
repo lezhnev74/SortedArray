@@ -122,7 +122,7 @@ func (a *SortedArray) Add(items []uint32) error {
 		a.dirtyChunks[chunkId] = struct{}{}
 		// update meta
 		cm := a.meta.GetChunkById(chunkId)
-		cm.size += uint32(len(items))
+		cm.size += uint32(added)
 		if a.loadedChunks[chunkId].Items[0] < cm.min {
 			cm.min = a.loadedChunks[chunkId].Items[0]
 		}
@@ -156,6 +156,12 @@ func (a *SortedArray) dumpChunks() {
 	for _, cm := range a.meta.chunks {
 		fmt.Printf("chunk %d: %v\n", cm.id, a.loadedChunks[cm.id].Items)
 	}
+}
+func (a *SortedArray) getChunks() (chunks [][]uint32) {
+	for _, cm := range a.meta.chunks {
+		chunks = append(chunks, a.loadedChunks[cm.id].Items)
+	}
+	return
 }
 
 // planModification returns items grouped by relevant chunk
@@ -270,8 +276,47 @@ func (a *SortedArray) Split() (split bool) {
 	return
 }
 
-func (a *SortedArray) Merge() (merged bool) {
-	return
+func (a *SortedArray) Merge() {
+	// 1. Make a merge plan:
+	plan := make([][]*ChunkMeta, 0) // each item contains two pieces to merge (ordered)
+	for i := 1; i < len(a.meta.chunks); i++ {
+		cm := a.meta.chunks[i]
+		prevCm := a.meta.chunks[i-1]
+		mergeSize := cm.size + prevCm.size
+		if mergeSize > a.maxChunkSize {
+			continue
+		}
+		plan = append(plan, []*ChunkMeta{prevCm, cm}) // ordered
+		i++                                           // skip the processed one
+	}
+
+	// 2. Load all chunks from the plan
+	chunkIds := make([]uint32, 0)
+	for _, cms := range plan {
+		chunkIds = append(chunkIds, cms[0].id, cms[1].id)
+	}
+	a.loadMissingChunks(chunkIds)
+
+	// 3. Merge
+	removeChunkIds := make([]uint32, 0, len(plan))
+	a.dirtyMeta = true
+	for _, cms := range plan {
+		// update meta
+		cm1, cm2 := cms[0], cms[1]
+		cm1.size += cm2.size
+		cm1.max = cm2.max
+		a.meta.Remove(cm2)
+		// update chunks
+		a.loadedChunks[cm1.id].Add(a.loadedChunks[cm2.id].Items)
+		a.dirtyChunks[cm1.id] = struct{}{}
+		delete(a.loadedChunks, cm2.id)
+		delete(a.dirtyChunks, cm2.id)
+		removeChunkIds = append(removeChunkIds, cm2.id)
+	}
+	err := a.storage.Remove(removeChunkIds)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func NewSortedArray(name []byte, maxChunkSize uint32, s ChunkStorage) *SortedArray {

@@ -18,17 +18,25 @@ type Chunk struct {
 // return the number of NEW elements added to the array
 func (c *Chunk) Add(items []uint32) (added int) {
 	// 1. Filter out duplicates
-	i := 0
+	// 1.1 Remove duplicates from the list itself
+	uniqueItems := items[:0]
 	for _, item := range items {
-		if !c.Contains(item) {
-			items[i] = item
-			i++
+		if !slices.Contains(uniqueItems, item) {
+			uniqueItems = append(uniqueItems, item)
 		}
 	}
-	items = items[:i]
+	items = uniqueItems
+	// 1.2 Remove existing in the chunk
+	newItems := items[:0]
+	for _, item := range items {
+		if !c.Contains(item) {
+			newItems = append(newItems, item)
+		}
+	}
+	items = newItems
 
 	// 2. allocate max possible at once
-	newItems := make([]uint32, len(c.Items)+len(items))
+	newItems = make([]uint32, len(c.Items)+len(items))
 	copy(newItems, c.Items)
 	var (
 		item uint32

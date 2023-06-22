@@ -20,10 +20,12 @@ type SortedArray struct {
 	dirtyChunks  map[uint32]struct{} // which loadedChunks are pending flushing
 	meta         Meta                // sorted array
 	dirtyMeta    bool                // meta is pending flushing
+	metaInit     bool                // meta is loaded from storage
 	storage      ChunkStorage
 }
 
 func (a *SortedArray) GetInRange(min, max uint32) ([]uint32, error) {
+	a.initMeta()
 	// 1. See appropriate chunks in meta
 	relevantChunkMeta := a.meta.FindRelevantForReadRange(min, max)
 	chunkIds := make([]uint32, len(relevantChunkMeta))
@@ -46,6 +48,7 @@ func (a *SortedArray) GetInRange(min, max uint32) ([]uint32, error) {
 }
 
 func (a *SortedArray) Delete(items []uint32) error {
+	a.initMeta()
 	// 1. Plan. Make a chunk map for new items (where to put each item) - a modification plan
 	plan, err := a.planModification(items)
 	if err != nil {
@@ -83,7 +86,7 @@ func (a *SortedArray) Delete(items []uint32) error {
 		a.meta.Remove(a.meta.GetChunkById(chunkId))
 	}
 	// 5. Detect too small chunks and MERGE those
-	a.Merge()
+	a.merge()
 	return nil
 }
 
@@ -92,7 +95,7 @@ func (a *SortedArray) Add(items []uint32) error {
 	if len(items) == 0 {
 		return nil
 	}
-	// Here the meta is supposed to be loaded, add init function
+	a.initMeta()
 
 	// 0. edge-case: the birth of the index, first chunk is created here
 	// all further chunks are made by SPLITTING only
@@ -131,21 +134,24 @@ func (a *SortedArray) Add(items []uint32) error {
 		}
 		a.dirtyMeta = true
 	}
-	// 4 Detect Too Big chunks and Split those
-	a.Split()
-
+	// 4 Detect Too Big chunks and split those
+	a.split()
 	return nil
 }
 
 // ToSlice dump all index to a single slice (for debugging/testing)
 func (a *SortedArray) ToSlice() []uint32 {
+	a.initMeta()
 	size := uint32(0)
+	ids := make([]uint32, 0, len(a.meta.chunks))
 	for _, cm := range a.meta.chunks {
 		size += cm.size
+		ids = append(ids, cm.id)
 	}
+	a.loadMissingChunks(ids)
 	ret := make([]uint32, 0, size)
 	for _, cm := range a.meta.chunks {
-		chunk := a.loadedChunks[cm.id] // todo: this can expire
+		chunk := a.loadedChunks[cm.id]
 		ret = append(ret, chunk.Items...)
 	}
 
@@ -236,23 +242,28 @@ func (a *SortedArray) loadMissingChunks(ids []uint32) error {
 	if err != nil {
 		return err
 	}
-	// 3. Merge with the existing load
+	// 3. merge with the existing load
 	maps.Copy(a.loadedChunks, loaded)
 	return nil
 }
 
-func (a *SortedArray) flush() {
-	// dirty meta
+func (a *SortedArray) Flush() {
+	if a.dirtyMeta {
+		a.dirtyMeta = false
+		a.storage.SaveMeta(a.meta.chunks)
+	}
+	chunksToSave := make(map[uint32]*Chunk, 0)
 	for id, _ := range a.dirtyChunks {
-		// Flush the chunk to the storage
+		chunksToSave[id] = a.loadedChunks[id]
 		delete(a.dirtyChunks, id)
 	}
+	a.storage.Save(chunksToSave)
 }
 
-// Split detects Too Big chunks based on Meta and Split those
+// split detects Too Big chunks based on Meta and split those
 // Redistribute affected items within split chunks
 // Return true if at least one split happened
-func (a *SortedArray) Split() (split bool) {
+func (a *SortedArray) split() (split bool) {
 	for _, cm := range a.meta.chunks {
 		// Check SPLIT conditions
 		if cm.size <= a.maxChunkSize { // means only SPLIT when overflow actually happens
@@ -271,12 +282,12 @@ func (a *SortedArray) Split() (split bool) {
 		a.createChunkFor(newChunkItems)
 	}
 	if split {
-		return a.Split() // go on until no more to split
+		return a.split() // go on until no more to split
 	}
 	return
 }
 
-func (a *SortedArray) Merge() {
+func (a *SortedArray) merge() {
 	// 1. Make a merge plan:
 	plan := make([][]*ChunkMeta, 0) // each item contains two pieces to merge (ordered)
 	for i := 1; i < len(a.meta.chunks); i++ {
@@ -297,7 +308,7 @@ func (a *SortedArray) Merge() {
 	}
 	a.loadMissingChunks(chunkIds)
 
-	// 3. Merge
+	// 3. merge
 	removeChunkIds := make([]uint32, 0, len(plan))
 	a.dirtyMeta = true
 	for _, cms := range plan {
@@ -316,6 +327,20 @@ func (a *SortedArray) Merge() {
 	err := a.storage.Remove(removeChunkIds)
 	if err != nil {
 		panic(err)
+	}
+}
+
+// initMeta loads meta into memory
+func (a *SortedArray) initMeta() {
+	if a.metaInit {
+		return
+	}
+	a.metaInit = true
+	a.meta.chunks, _ = a.storage.ReadMeta()
+	for _, cm := range a.meta.chunks {
+		if a.meta.nextId <= cm.id {
+			a.meta.nextId = cm.id
+		}
 	}
 }
 

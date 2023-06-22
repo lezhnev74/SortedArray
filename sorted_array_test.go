@@ -6,6 +6,25 @@ import (
 	"testing"
 )
 
+func TestStorageIntegration(t *testing.T) {
+	storage := NewInMemoryChunkStorage()
+
+	// Make modifications from instance1
+	arr1 := NewSortedArray([]byte("test"), 3, storage)
+	arr1.Add([]uint32{10, 20, 30, 40, 50})
+	arr1.Delete([]uint32{10, 30, 50})
+	require.EqualValues(t, []uint32{20, 40}, arr1.ToSlice())
+	arr1.Flush()
+
+	// Read from instance2, modify
+	arr2 := NewSortedArray([]byte("test"), 10, storage)
+	require.EqualValues(t, []uint32{20, 40}, arr2.ToSlice())
+	arr2.Add([]uint32{1, 30, 99})
+	arr2.Delete([]uint32{40})
+	require.EqualValues(t, []uint32{1, 20, 30, 99}, arr2.ToSlice())
+	arr2.Flush()
+}
+
 func TestInternalChunkingRandomizedTest(t *testing.T) {
 	for size := 1; size <= 10; size++ {
 		arr := NewSortedArray([]byte("test"), uint32(size), NewInMemoryChunkStorage())
@@ -28,20 +47,11 @@ func TestInternalChunkingRandomizedTest(t *testing.T) {
 	}
 }
 
-//func TestChunkSelection(t *testing.T) {
-//	// make sure that adding unsorted values distribute among chunks correctly
-//	arr := NewSortedArray([]byte("TERM1"), 2, NewInMemoryChunkStorage())
-//	arr.Add([]uint32{10, 20, 30, 40, 50})
-//	arr.dumpChunks()
-//	arr.Add([]uint32{24, 23, 22, 21})
-//	arr.dumpChunks()
-//}
-
 func TestChunking(t *testing.T) {
 	chunkSize := uint32(3)
 	arr := NewSortedArray([]byte("TERM1"), chunkSize, NewInMemoryChunkStorage())
 
-	// Split
+	// split
 	err := arr.Add([]uint32{10, 20, 30, 100, 200}) // 2 chunks should be created
 	require.NoError(t, err)
 	err = arr.Add([]uint32{10, 20, 30, 100, 200}) // idempotency

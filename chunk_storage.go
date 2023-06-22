@@ -10,13 +10,13 @@ type ChunkStorage interface {
 	Save(chunks map[uint32]*Chunk) error
 	Remove(chunkIds []uint32) error
 
-	ReadMeta() ([]ChunkMeta, error)
-	SaveMeta([]ChunkMeta) error
+	ReadMeta() ([]*ChunkMeta, error)
+	SaveMeta([]*ChunkMeta) error
 }
 
 type InMemoryChunkStorage struct {
 	chunks map[uint32]*Chunk
-	meta   []ChunkMeta
+	meta   []*ChunkMeta
 }
 
 func (s *InMemoryChunkStorage) Read(chunkIds []uint32) (map[uint32]*Chunk, error) {
@@ -43,11 +43,11 @@ func (s *InMemoryChunkStorage) Save(chunks map[uint32]*Chunk) error {
 	return nil
 }
 
-func (s *InMemoryChunkStorage) ReadMeta() ([]ChunkMeta, error) {
+func (s *InMemoryChunkStorage) ReadMeta() ([]*ChunkMeta, error) {
 	return s.meta, nil
 }
 
-func (s *InMemoryChunkStorage) SaveMeta(meta []ChunkMeta) error {
+func (s *InMemoryChunkStorage) SaveMeta(meta []*ChunkMeta) error {
 	s.meta = meta
 	return nil
 }

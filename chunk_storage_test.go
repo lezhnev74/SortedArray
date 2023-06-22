@@ -31,7 +31,7 @@ func TestInMemoryChunkStorage(t *testing.T) {
 	require.EqualValues(t, chunks[2], chunks3[2])
 
 	// Meta:
-	list := []ChunkMeta{
+	list := []*ChunkMeta{
 		{1, 0, 2, 2},
 		{2, 3, 4, 2},
 	}

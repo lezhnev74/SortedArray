@@ -46,34 +46,44 @@ func (a *SortedArray) GetInRange(min, max uint32) ([]uint32, error) {
 }
 
 func (a *SortedArray) Delete(items []uint32) error {
-	// Make a chunk map for new items (where to put each item) - a modification plan
+	// 1. Plan. Make a chunk map for new items (where to put each item) - a modification plan
 	plan, err := a.planModification(items)
 	if err != nil {
 		return err
 	}
-
-	// Process the map
-	// 1. Load missing chunks
+	// 2. Load missing chunks
 	err = a.loadMissingChunks(maps.Keys(plan))
 	if err != nil {
 		return err
 	}
-	// 2. Make removal
+	// 3. Make removal
+	emptyChunkIds := make([]uint32, 0)
 	for chunkId, items := range plan {
-		a.loadedChunks[chunkId].Remove(items)
+		chunk := a.loadedChunks[chunkId]
+		removed := chunk.Remove(items)
+		if removed == 0 {
+			continue
+		}
+		// detect empty chunk
+		if len(chunk.Items) == 0 {
+			emptyChunkIds = append(emptyChunkIds, chunkId)
+			continue
+		}
+		a.dirtyChunks[chunkId] = struct{}{}
 		// update meta
 		a.dirtyMeta = true
 		cm := a.meta.GetChunkById(chunkId)
-		if len(a.loadedChunks[chunkId].Items) == 0 { // empty chunk
-			a.meta.Remove(cm)
-			continue
-		}
-		cm.min = a.loadedChunks[chunkId].Items[0]
-		cm.max = a.loadedChunks[chunkId].Items[len(a.loadedChunks[chunkId].Items)-1]
-		cm.size = uint32(len(a.loadedChunks[chunkId].Items))
-
+		cm.min = chunk.Items[0]
+		cm.max = chunk.Items[len(chunk.Items)-1]
+		cm.size = uint32(len(chunk.Items))
 	}
-
+	// 4. Cleanup empty
+	a.storage.Remove(emptyChunkIds)
+	for _, chunkId := range emptyChunkIds {
+		a.meta.Remove(a.meta.GetChunkById(chunkId))
+	}
+	// 5. Detect too small chunks and MERGE those
+	a.Merge()
 	return nil
 }
 
@@ -109,6 +119,7 @@ func (a *SortedArray) Add(items []uint32) error {
 		if added == 0 {
 			continue // no new items added
 		}
+		a.dirtyChunks[chunkId] = struct{}{}
 		// update meta
 		cm := a.meta.GetChunkById(chunkId)
 		cm.size += uint32(len(items))
@@ -256,6 +267,10 @@ func (a *SortedArray) Split() (split bool) {
 	if split {
 		return a.Split() // go on until no more to split
 	}
+	return
+}
+
+func (a *SortedArray) Merge() (merged bool) {
 	return
 }
 

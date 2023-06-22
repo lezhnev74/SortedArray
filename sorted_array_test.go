@@ -18,6 +18,11 @@ func TestChunking(t *testing.T) {
 	err = arr.Add([]uint32{9, 31, 201}) // add in-between chunks
 	require.NoError(t, err)
 	require.EqualValues(t, []uint32{9, 10, 20, 30, 31, 100, 200, 201}, arr.ToSlice())
+
+	// Remove
+	err = arr.Delete([]uint32{10, 20, 30, 200})
+	require.NoError(t, err)
+	require.EqualValues(t, []uint32{9, 31, 100, 201}, arr.ToSlice())
 }
 
 func TestSimpleAPI(t *testing.T) {

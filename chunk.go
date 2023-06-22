@@ -15,19 +15,29 @@ type Chunk struct {
 }
 
 // Add insert new values to the sorted array with just one allocation
-func (c *Chunk) Add(items []uint32) {
-	newItems := make([]uint32, 0, len(c.Items)+len(items)) // allocate max possible at once
+// return the number of NEW elements added to the array
+func (c *Chunk) Add(items []uint32) (added int) {
+	// 1. Filter out duplicates
+	i := 0
+	for _, item := range items {
+		if !c.Contains(item) {
+			items[i] = item
+			i++
+		}
+	}
+	items = items[:i]
+
+	// 2. allocate max possible at once
+	newItems := make([]uint32, len(c.Items)+len(items))
 	copy(newItems, c.Items)
 	var (
-		item  uint32
-		pos   int
-		found bool
+		item uint32
+		pos  int
 	)
+
 	for _, item = range items {
-		pos, found = slices.BinarySearch(newItems, item)
-		if found {
-			continue // no duplication
-		}
+		pos, _ = slices.BinarySearch(newItems[:len(c.Items)+added], item)
+		added++
 		if pos == len(newItems) { // edge-case: append at the end
 			newItems = append(newItems, item)
 			continue
@@ -36,21 +46,23 @@ func (c *Chunk) Add(items []uint32) {
 		newItems[pos] = item
 	}
 	c.Items = newItems
+	return
 }
 
-func (c *Chunk) Remove(itemsToRemove []uint32) {
+func (c *Chunk) Remove(itemsToRemove []uint32) (removed int) {
 	// in-place removal
 	for _, removeItem := range itemsToRemove {
 		pos, exists := slices.BinarySearch(c.Items, removeItem)
 		if !exists {
 			continue
 		}
+		removed++
 		if pos != len(c.Items)-1 {
 			copy(c.Items[pos:], c.Items[pos+1:]) // shift
 		}
 		c.Items = c.Items[:len(c.Items)-1] // reduce size
 	}
-
+	return
 }
 
 func (c *Chunk) Contains(item uint32) bool { return contains(c.Items, item) }
@@ -80,6 +92,7 @@ func NewChunk(items []uint32) *Chunk {
 	if items == nil {
 		items = make([]uint32, 0)
 	}
+	slices.Sort(items)
 	return &Chunk{items}
 }
 

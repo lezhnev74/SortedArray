@@ -1,9 +1,9 @@
 package sorted_array
 
 import (
-	"errors"
 	"fmt"
 	"golang.org/x/exp/maps"
+	"math"
 )
 
 var (
@@ -45,18 +45,115 @@ func (a *SortedArray) GetInRange(min, max uint32) ([]uint32, error) {
 	return ret, nil
 }
 
-// Add puts new values to the slice (protects from duplication)
-func (a *SortedArray) Add(items []uint32) error {
+func (a *SortedArray) Delete(items []uint32) error {
 	// Make a chunk map for new items (where to put each item) - a modification plan
-	plan := make(map[uint32][]uint32)
+	plan, err := a.planModification(items)
+	if err != nil {
+		return err
+	}
+
+	// Process the map
+	// 1. Load missing chunks
+	err = a.loadMissingChunks(maps.Keys(plan))
+	if err != nil {
+		return err
+	}
+	// 2. Make removal
+	for chunkId, items := range plan {
+		a.loadedChunks[chunkId].Remove(items)
+		// update meta
+		a.dirtyMeta = true
+		cm := a.meta.GetChunkById(chunkId)
+		if len(a.loadedChunks[chunkId].Items) == 0 { // empty chunk
+			a.meta.Remove(cm)
+			continue
+		}
+		cm.min = a.loadedChunks[chunkId].Items[0]
+		cm.max = a.loadedChunks[chunkId].Items[len(a.loadedChunks[chunkId].Items)-1]
+		cm.size = uint32(len(a.loadedChunks[chunkId].Items))
+
+	}
+
+	return nil
+}
+
+// Add Puts new items to the array
+func (a *SortedArray) Add(items []uint32) error {
+	if len(items) == 0 {
+		return nil
+	}
+	// Here the meta is supposed to be loaded, add init function
+
+	// 0. edge-case: the birth of the index, first chunk is created here
+	// all further chunks are made by SPLITTING only
+	if len(a.meta.chunks) == 0 {
+		a.createChunkFor(items[:1])
+		items = items[1:]    // the first item was consumed to spawn a new chunk
+		if len(items) == 0 { // another check after consuming one item
+			return nil
+		}
+	}
+	// 1. Make a chunk map for new items (where to put each item) - a modification plan
+	plan, err := a.planModification(items)
+	if err != nil {
+		return err
+	}
+	// 2. Load missing chunks
+	err = a.loadMissingChunks(maps.Keys(plan))
+	if err != nil {
+		return err
+	}
+	// 3. Make insertion
+	for chunkId, items := range plan {
+		added := a.loadedChunks[chunkId].Add(items)
+		if added == 0 {
+			continue // no new items added
+		}
+		// update meta
+		cm := a.meta.GetChunkById(chunkId)
+		cm.size += uint32(len(items))
+		if a.loadedChunks[chunkId].Items[0] < cm.min {
+			cm.min = a.loadedChunks[chunkId].Items[0]
+		}
+		if a.loadedChunks[chunkId].Items[len(a.loadedChunks[chunkId].Items)-1] > cm.max {
+			cm.max = a.loadedChunks[chunkId].Items[len(a.loadedChunks[chunkId].Items)-1]
+		}
+		a.dirtyMeta = true
+	}
+	// 4 Detect Too Big chunks and Split those
+	a.Split()
+
+	return nil
+}
+
+// ToSlice dump all index to a single slice (for debugging/testing)
+func (a *SortedArray) ToSlice() []uint32 {
+	size := uint32(0)
+	for _, cm := range a.meta.chunks {
+		size += cm.size
+	}
+	ret := make([]uint32, 0, size)
+	for _, cm := range a.meta.chunks {
+		chunk := a.loadedChunks[cm.id] // todo: this can expire
+		ret = append(ret, chunk.Items...)
+	}
+
+	return ret
+}
+func (a *SortedArray) dumpChunks() {
+	fmt.Printf("--- chunks ---\n")
+	for _, cm := range a.meta.chunks {
+		fmt.Printf("chunk %d: %v\n", cm.id, a.loadedChunks[cm.id].Items)
+	}
+}
+
+// planModification returns items grouped by relevant chunk
+func (a *SortedArray) planModification(items []uint32) (plan map[uint32][]uint32, err error) {
+	plan = make(map[uint32][]uint32)
 	for _, item := range items {
 		relevantChunkId, err := a.selectChunkIdForInsertion(item)
 		if err != nil {
-			if errors.Is(err, noChunkFound) {
-				relevantChunkId = a.createChunkFor(item)
-			} else {
-				return err
-			}
+			return nil, err
 		}
 		_, ok := plan[relevantChunkId]
 		if !ok {
@@ -64,37 +161,10 @@ func (a *SortedArray) Add(items []uint32) error {
 		}
 		plan[relevantChunkId] = append(plan[relevantChunkId], item)
 	}
-
-	// Process the map
-	// 1. Load missing chunks
-	a.loadMissingChunks(maps.Keys(plan))
-	// 2. Make insertion
-	for chunkId, items := range plan {
-		a.loadedChunks[chunkId].Add(items)
-		// update meta
-		cm := a.meta.GetChunkById(chunkId)
-		cm.min = a.loadedChunks[chunkId].Items[0]
-		cm.max = a.loadedChunks[chunkId].Items[len(a.loadedChunks[chunkId].Items)-1]
-		cm.size = uint32(len(a.loadedChunks[chunkId].Items))
-		a.dirtyMeta = true
-	}
-
-	return nil
+	return plan, nil
 }
 
-// ToSlice dump all index to a single slice (for debugging/testing)
-func (a *SortedArray) ToSlice() []uint32 {
-
-	ret := make([]uint32, 0, len(a.meta.chunks))
-	for _, cm := range a.meta.chunks {
-		chunk := a.loadedChunks[cm.id]
-		ret = append(ret, chunk.Items...)
-	}
-
-	return ret
-}
-
-// selectChunkIdForInsertion finds a suitable chunk for storing this item in meta
+// selectChunkIdForInsertion finds a suitable chunk for storing this item
 func (a *SortedArray) selectChunkIdForInsertion(item uint32) (chunkId uint32, err error) {
 	cms := a.meta.FindRelevantForInsert(item)
 	// 0. No suitable chunks -> create
@@ -105,37 +175,28 @@ func (a *SortedArray) selectChunkIdForInsertion(item uint32) (chunkId uint32, er
 	// 1. One chunk -> use
 	if len(cms) == 1 {
 		chunkId = cms[0].id
-		if cms[0].size >= a.maxChunkSize {
-			err = chunkTooBig
-		}
 		return
 	}
 	// 2. Two chunks -> select most appropriate
 	if cms[0].size < cms[1].size {
 		chunkId = cms[0].id
-		if cms[0].size >= a.maxChunkSize {
-			err = chunkTooBig
-		}
-		return
-	}
-
-	chunkId = cms[1].id
-	if cms[1].size >= a.maxChunkSize {
-		err = chunkTooBig
+	} else {
+		chunkId = cms[1].id
 	}
 	return
 }
 
 // createChunkFor allocates a new chunk for the item and puts it into
-func (a *SortedArray) createChunkFor(item uint32) uint32 {
+// items are sorted
+func (a *SortedArray) createChunkFor(items []uint32) uint32 {
 	// Make Chunk Description
 	chunkId := a.meta.TakeNextId()
-	chunkMeta := &ChunkMeta{chunkId, item, item, 1}
+	chunkMeta := &ChunkMeta{chunkId, items[0], items[len(items)-1], uint32(len(items))}
 	a.meta.Add([]*ChunkMeta{chunkMeta})
 	a.dirtyMeta = true
 
 	// Make a chunk
-	c := NewChunk([]uint32{item})
+	c := NewChunk(items)
 	a.loadedChunks[chunkId] = c
 	a.dirtyChunks[chunkId] = struct{}{}
 
@@ -145,17 +206,14 @@ func (a *SortedArray) createChunkFor(item uint32) uint32 {
 // loadMissingChunks checks which chunks are not in memory and loads them from the storage
 func (a *SortedArray) loadMissingChunks(ids []uint32) error {
 	// 1. remove already loaded
-	for i, id := range ids {
-		_, exists := a.loadedChunks[id]
-		if !exists {
-			continue
-		}
-		if i < len(ids)-1 {
-			ids = append(ids[:i], ids[i+1:]...)
-		} else {
-			ids = ids[:i]
+	i := 0
+	for _, id := range ids {
+		if _, exists := a.loadedChunks[id]; !exists {
+			ids[i] = id
+			i++
 		}
 	}
+	ids = ids[:i]
 	// 2. Load the rest
 	loaded, err := a.storage.Read(ids)
 	if err != nil {
@@ -172,6 +230,33 @@ func (a *SortedArray) flush() {
 		// Flush the chunk to the storage
 		delete(a.dirtyChunks, id)
 	}
+}
+
+// Split detects Too Big chunks based on Meta and Split those
+// Redistribute affected items within split chunks
+// Return true if at least one split happened
+func (a *SortedArray) Split() (split bool) {
+	for _, cm := range a.meta.chunks {
+		// Check SPLIT conditions
+		if cm.size <= a.maxChunkSize { // means only SPLIT when overflow actually happens
+			continue
+		}
+		// SPLIT:
+		split = true
+		chunk := a.loadedChunks[cm.id]
+		newSize := uint32(math.Ceil(float64(cm.size) / 2))
+		newChunkItems := chunk.Items[newSize:] // split in half
+		chunk.Items = chunk.Items[:newSize]
+		// Update original chunk's meta
+		cm.size = newSize
+		cm.max = chunk.Items[newSize-1]
+		// Create a new chunk
+		a.createChunkFor(newChunkItems)
+	}
+	if split {
+		return a.Split() // go on until no more to split
+	}
+	return
 }
 
 func NewSortedArray(name []byte, maxChunkSize uint32, s ChunkStorage) *SortedArray {

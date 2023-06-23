@@ -14,7 +14,6 @@ var (
 // SortedArray manages ASC sorted array in chunks for better performance
 // Chunks contain up to maxInsertSize items and may not intersect with each other
 type SortedArray struct {
-	name         []byte
 	maxChunkSize uint32
 	loadedChunks map[uint32]*Chunk
 	dirtyChunks  map[uint32]struct{} // which loadedChunks are pending flushing
@@ -344,9 +343,8 @@ func (a *SortedArray) initMeta() {
 	}
 }
 
-func NewSortedArray(name []byte, maxChunkSize uint32, s ChunkStorage) *SortedArray {
+func NewSortedArray(maxChunkSize uint32, s ChunkStorage) *SortedArray {
 	return &SortedArray{
-		name:         name,
 		loadedChunks: make(map[uint32]*Chunk),
 		dirtyChunks:  make(map[uint32]struct{}),
 		maxChunkSize: maxChunkSize,

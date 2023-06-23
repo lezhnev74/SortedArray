@@ -2,6 +2,7 @@ package sorted_array
 
 import (
 	"fmt"
+	sorted_numeric_streams "github.com/lezhnev74/SetOperationsOnSortedNumericStreams"
 	"golang.org/x/exp/maps"
 	"math"
 )
@@ -23,7 +24,8 @@ type SortedArray struct {
 	storage      ChunkStorage
 }
 
-func (a *SortedArray) GetInRange(min, max uint32) ([]uint32, error) {
+// GetInRange returns a stream of items (min,max are INCLUDED)
+func (a *SortedArray) GetInRange(min, max uint32) (sorted_numeric_streams.SortedNumbersStream[uint32], error) {
 	a.initMeta()
 	// 1. See appropriate chunks in meta
 	relevantChunkMeta := a.meta.FindRelevantForReadRange(min, max)
@@ -33,17 +35,19 @@ func (a *SortedArray) GetInRange(min, max uint32) ([]uint32, error) {
 	}
 	a.loadMissingChunks(chunkIds)
 
-	// 2. Copy all appropriate ids from loaded chunks
-	ret := make([]uint32, 0)
-	for _, id := range chunkIds {
-		for _, item := range a.loadedChunks[id].Items {
-			if item >= min && item <= max {
-				ret = append(ret, item)
+	result := sorted_numeric_streams.NewChannelStream[uint32]()
+	go func() {
+		defer result.Close()
+		// 2. Iterate over all chunks in order and push items to the outbound stream
+		for _, id := range chunkIds {
+			for _, item := range a.loadedChunks[id].Items {
+				if item >= min && item <= max {
+					result.Push(item)
+				}
 			}
 		}
-	}
-
-	return ret, nil
+	}()
+	return result, nil
 }
 
 func (a *SortedArray) Delete(items []uint32) error {

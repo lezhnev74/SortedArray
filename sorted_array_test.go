@@ -1,6 +1,7 @@
 package sorted_array
 
 import (
+	sorted_numeric_streams "github.com/lezhnev74/SetOperationsOnSortedNumericStreams"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/rand"
 	"testing"
@@ -91,16 +92,16 @@ func TestSimpleAPI(t *testing.T) {
 	// GetInRange test
 	items, err := arr.GetInRange(0, 100) // all
 	require.NoError(t, err)
-	require.EqualValues(t, []uint32{1, 2, 3, 4, 5}, items)
+	require.EqualValues(t, []uint32{1, 2, 3, 4, 5}, sorted_numeric_streams.ToSlice(items))
 	items, err = arr.GetInRange(0, 4) // left partial
 	require.NoError(t, err)
-	require.EqualValues(t, []uint32{1, 2, 3, 4}, items)
+	require.EqualValues(t, []uint32{1, 2, 3, 4}, sorted_numeric_streams.ToSlice(items))
 	items, err = arr.GetInRange(4, 100) // right partial
 	require.NoError(t, err)
-	require.EqualValues(t, []uint32{4, 5}, items)
+	require.EqualValues(t, []uint32{4, 5}, sorted_numeric_streams.ToSlice(items))
 	items, err = arr.GetInRange(1, 2) // inner
 	require.NoError(t, err)
-	require.EqualValues(t, []uint32{1, 2}, items)
+	require.EqualValues(t, []uint32{1, 2}, sorted_numeric_streams.ToSlice(items))
 
 	// Delete
 	err = arr.Delete([]uint32{1, 3, 9}) // remove real and absent

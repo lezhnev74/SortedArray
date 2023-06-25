@@ -39,7 +39,10 @@ SaveMeta([]*ChunkMeta) error
 }
 ```
 
-Only an in-memory implementation is present in this package used for testing purposes.
+Two implementations are present in this package:
+- in-memory (used for testing purposes)
+- sqlite
+
 Transactions are not assumed by this package. I kept in mind one particular use-case: sqlite as a storage.
 One would start an SQLite transaction and within this transaction load this index and work with numbers.
 SQLite would handle concurrent access. Within Sqlite I would use blobs to keep this array's chunks.

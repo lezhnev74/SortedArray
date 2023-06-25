@@ -20,7 +20,7 @@ type SortedArray struct {
 	chunksLock   sync.Mutex
 	loadedChunks map[uint32]*Chunk
 	dirtyChunks  map[uint32]struct{} // which loadedChunks are pending flushing
-	meta         Meta                // sorted array
+	meta         *Meta               // sorted array
 	dirtyMeta    bool                // meta is pending flushing
 	metaInit     bool                // meta is loaded from storage
 	storage      ChunkStorage
@@ -267,7 +267,7 @@ func (a *SortedArray) releaseChunks(ids []uint32) {
 func (a *SortedArray) Flush() {
 	if a.dirtyMeta {
 		a.dirtyMeta = false
-		a.storage.SaveMeta(a.meta.chunks)
+		a.storage.SaveMeta(a.meta)
 	}
 	chunksToSave := make(map[uint32]*Chunk, 0)
 	for id, _ := range a.dirtyChunks {
@@ -354,7 +354,7 @@ func (a *SortedArray) initMeta() {
 		return
 	}
 	a.metaInit = true
-	a.meta.chunks, _ = a.storage.ReadMeta()
+	a.meta, _ = a.storage.ReadMeta()
 	for _, cm := range a.meta.chunks {
 		if a.meta.nextId <= cm.id {
 			a.meta.nextId = cm.id

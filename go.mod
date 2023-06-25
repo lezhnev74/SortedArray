@@ -1,4 +1,4 @@
-module SortedArray
+module github.com/lezhnev74/SortedArray
 
 go 1.20
 

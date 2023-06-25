@@ -1,4 +1,4 @@
-package SortedArray
+package sorted_array
 
 func contains[T comparable](elems []T, v T) bool {
 	for _, s := range elems {

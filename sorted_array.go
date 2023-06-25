@@ -29,22 +29,19 @@ func (a *SortedArray) GetInRange(min, max uint32) (sorted_numeric_streams.Sorted
 	a.initMeta()
 	// 1. See appropriate chunks in meta
 	relevantChunkMeta := a.meta.FindRelevantForReadRange(min, max)
-	chunkIds := make([]uint32, len(relevantChunkMeta))
-	for i, cm := range relevantChunkMeta {
-		chunkIds[i] = cm.id
-	}
-	a.loadMissingChunks(chunkIds)
 
 	result := sorted_numeric_streams.NewChannelStream[uint32]()
 	go func() {
 		defer result.Close()
 		// 2. Iterate over all chunks in order and push items to the outbound stream
-		for _, id := range chunkIds {
-			for _, item := range a.loadedChunks[id].Items {
+		for _, cm := range relevantChunkMeta {
+			a.loadMissingChunks([]uint32{cm.id}) // load the chunk
+			for _, item := range a.loadedChunks[cm.id].Items {
 				if item >= min && item <= max {
 					result.Push(item)
 				}
 			}
+			delete(a.loadedChunks, cm.id) // free the chunk
 		}
 	}()
 	return result, nil
@@ -259,6 +256,7 @@ func (a *SortedArray) Flush() {
 	for id, _ := range a.dirtyChunks {
 		chunksToSave[id] = a.loadedChunks[id]
 		delete(a.dirtyChunks, id)
+		delete(a.loadedChunks, id) // free the chunk
 	}
 	a.storage.Save(chunksToSave)
 }

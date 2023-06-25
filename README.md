@@ -30,12 +30,12 @@ To store chunks one needs to implement this interface:
 
 ```go
 type ChunkStorage interface {
-    Read(chunkIds []uint32) (map[uint32]*Chunk, error)
-    Save(chunks map[uint32]*Chunk) error
-    Remove(chunkIds []uint32) error
-    
-    ReadMeta() ([]*ChunkMeta, error)
-    SaveMeta([]*ChunkMeta) error
+Read(chunkIds []uint32) (map[uint32]*Chunk, error)
+Save(chunks map[uint32]*Chunk) error
+Remove(chunkIds []uint32) error
+
+ReadMeta() ([]*ChunkMeta, error)
+SaveMeta([]*ChunkMeta) error
 }
 ```
 
@@ -55,4 +55,11 @@ Some GO implementations are:
 - https://github.com/ronanh/intcomp
 - https://github.com/Akron/encoding
 
+## Concurrent Access And Garbage Collector
+
+This lib loads chunks into memory. Chunks are determined based on meta description and input given to
+Add/Delete/GetInRange. Loaded chunks are freed (for further GC) upon these events:
+
+- Flush() called
+- GetInRage() loads and frees one chunk at a time while iterating
 

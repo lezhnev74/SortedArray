@@ -1,11 +1,41 @@
 package sorted_array
 
 import (
+	"fmt"
 	SortedArrayStream "github.com/lezhnev74/SetOperationsOnSortedNumericStreams"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/rand"
 	"testing"
 )
+
+func TestSequentialAdd(t *testing.T) {
+	type test struct {
+		addItems      [][]uint32
+		expectedSlice []uint32
+	}
+	tests := []test{
+		{
+			addItems: [][]uint32{
+				{71, 92, 39, 47, 67},
+				{61, 59, 83, 29, 23},
+			},
+			expectedSlice: []uint32{23, 29, 39, 47, 59, 61, 67, 71, 83, 92},
+		},
+	}
+
+	for i, tt := range tests {
+		t.Run(fmt.Sprintf("test %d", i), func(t *testing.T) {
+			storage := NewInMemoryChunkStorage()
+			for _, items := range tt.addItems {
+				arr := NewSortedArray(2, storage)
+				arr.Add(items)
+				arr.Flush()
+			}
+			arr := NewSortedArray(2, storage)
+			require.EqualValues(t, tt.expectedSlice, arr.ToSlice())
+		})
+	}
+}
 
 func TestStorageIntegration(t *testing.T) {
 	storage := NewInMemoryChunkStorage()

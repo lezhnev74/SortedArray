@@ -3,6 +3,7 @@ package sorted_array
 import (
 	"fmt"
 	sorted_numeric_streams "github.com/lezhnev74/SetOperationsOnSortedNumericStreams"
+	"github.com/pkg/errors"
 	"golang.org/x/exp/maps"
 	"math"
 	"sync"
@@ -28,7 +29,11 @@ type SortedArray struct {
 
 // GetInRange returns a stream of items (min,max are INCLUDED)
 func (a *SortedArray) GetInRange(min, max uint32) (sorted_numeric_streams.SortedNumbersStream[uint32], error) {
-	a.initMeta()
+	err := a.initMeta()
+	if err != nil {
+		return nil, err
+	}
+
 	// 1. See appropriate chunks in meta
 	relevantChunkMeta := a.meta.FindRelevantForReadRange(min, max)
 
@@ -38,7 +43,6 @@ func (a *SortedArray) GetInRange(min, max uint32) (sorted_numeric_streams.Sorted
 		// 2. Iterate over all chunks in order and push items to the outbound stream
 		for _, cm := range relevantChunkMeta {
 			err := a.loadChunks([]uint32{cm.id}) // load the chunk
-			fmt.Printf("loaded chunk: %v\n", a.loadedChunks[cm.id])
 			if err != nil {
 				panic(err)
 			}
@@ -54,7 +58,10 @@ func (a *SortedArray) GetInRange(min, max uint32) (sorted_numeric_streams.Sorted
 }
 
 func (a *SortedArray) Delete(items []uint32) error {
-	a.initMeta()
+	err := a.initMeta()
+	if err != nil {
+		return err
+	}
 	// 1. Plan. Make a chunk map for new items (where to put each item) - a modification plan
 	plan, err := a.planModification(items)
 	if err != nil {
@@ -101,7 +108,10 @@ func (a *SortedArray) Add(items []uint32) error {
 	if len(items) == 0 {
 		return nil
 	}
-	a.initMeta()
+	err := a.initMeta()
+	if err != nil {
+		return err
+	}
 
 	// 0. edge-case: the birth of the index, first chunk is created here
 	// all further chunks are made by SPLITTING only
@@ -147,14 +157,20 @@ func (a *SortedArray) Add(items []uint32) error {
 
 // ToSlice dump all index to a single slice (for debugging/testing)
 func (a *SortedArray) ToSlice() []uint32 {
-	a.initMeta()
+	err := a.initMeta()
+	if err != nil {
+		panic(err)
+	}
 	size := uint32(0)
 	ids := make([]uint32, 0, len(a.meta.chunks))
 	for _, cm := range a.meta.chunks {
 		size += cm.size
 		ids = append(ids, cm.id)
 	}
-	a.loadChunks(ids)
+	err = a.loadChunks(ids)
+	if err != nil {
+		panic(errors.Wrap(err, "ToSlice() failed"))
+	}
 	ret := make([]uint32, 0, size)
 	for _, cm := range a.meta.chunks {
 		chunk := a.loadedChunks[cm.id]
@@ -245,6 +261,9 @@ func (a *SortedArray) loadChunks(ids []uint32) error {
 		}
 	}
 	ids = ids[:i]
+	if len(ids) == 0 {
+		return nil
+	}
 	// 2. Load the rest
 	loaded, err := a.storage.Read(ids)
 	if err != nil {
@@ -349,17 +368,22 @@ func (a *SortedArray) merge() {
 }
 
 // initMeta loads meta into memory
-func (a *SortedArray) initMeta() {
+func (a *SortedArray) initMeta() (err error) {
 	if a.metaInit {
-		return
+		return nil
 	}
 	a.metaInit = true
-	a.meta, _ = a.storage.ReadMeta()
+	a.meta, err = a.storage.ReadMeta()
+	if err != nil {
+		return
+	}
+	a.meta.nextId = 0
 	for _, cm := range a.meta.chunks {
 		if a.meta.nextId <= cm.id {
-			a.meta.nextId = cm.id
+			a.meta.nextId = cm.id + 1
 		}
 	}
+	return
 }
 
 func NewSortedArray(maxChunkSize uint32, s ChunkStorage) *SortedArray {

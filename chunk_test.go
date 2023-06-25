@@ -159,7 +159,9 @@ func TestRemove(t *testing.T) {
 
 func TestSerialize(t *testing.T) {
 	chunk := NewChunk([]uint32{1, 2, 3})
-	s := chunk.Serialize()
-	chunk2 := UnserializeChunk(s)
+	s, err := chunk.Serialize()
+	require.NoError(t, err)
+	chunk2, err := UnserializeChunk(s)
+	require.NoError(t, err)
 	require.EqualValues(t, chunk.Items, chunk2.Items)
 }

@@ -86,14 +86,14 @@ func (c *Chunk) GetInRange(from, to uint32) []uint32 {
 	}
 	return retItems
 }
-func (c *Chunk) Serialize() []byte {
+func (c *Chunk) Serialize() ([]byte, error) {
 	var serialized bytes.Buffer
 	enc := gob.NewEncoder(&serialized)
 	err := enc.Encode(c)
 	if err != nil {
-		panic(fmt.Errorf("unable to encode: %s", err))
+		return nil, fmt.Errorf("unable to encode: %s", err)
 	}
-	return serialized.Bytes()
+	return serialized.Bytes(), nil
 }
 
 func NewChunk(items []uint32) *Chunk {
@@ -104,13 +104,13 @@ func NewChunk(items []uint32) *Chunk {
 	return &Chunk{items}
 }
 
-func UnserializeChunk(data []byte) *Chunk {
+func UnserializeChunk(data []byte) (*Chunk, error) {
 	var c Chunk
 	buf := bytes.NewBuffer(data)
 	enc := gob.NewDecoder(buf)
 	err := enc.Decode(&c)
 	if err != nil {
-		panic(fmt.Errorf("unable to decode: %s", err))
+		return nil, fmt.Errorf("unable to decode: %s", err)
 	}
-	return &c
+	return &c, nil
 }

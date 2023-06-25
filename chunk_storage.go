@@ -1,4 +1,4 @@
-package sorted_array
+package SortedArray
 
 import "golang.org/x/exp/maps"
 

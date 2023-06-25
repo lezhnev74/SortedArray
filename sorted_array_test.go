@@ -1,7 +1,7 @@
-package sorted_array
+package SortedArray
 
 import (
-	sorted_numeric_streams "github.com/lezhnev74/SetOperationsOnSortedNumericStreams"
+	SortedArrayStream "github.com/lezhnev74/SetOperationsOnSortedNumericStreams"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/rand"
 	"testing"
@@ -87,26 +87,28 @@ func TestSimpleAPI(t *testing.T) {
 	require.NoError(t, err)
 	err = arr.Add([]uint32{1, 2, 3, 4, 5}) // idempotency
 	require.NoError(t, err)
+	arr.Flush()
 	require.EqualValues(t, []uint32{1, 2, 3, 4, 5}, arr.ToSlice())
 
 	// GetInRange test
 	items, err := arr.GetInRange(0, 100) // all
 	require.NoError(t, err)
-	require.EqualValues(t, []uint32{1, 2, 3, 4, 5}, sorted_numeric_streams.ToSlice(items))
+	require.EqualValues(t, []uint32{1, 2, 3, 4, 5}, SortedArrayStream.ToSlice(items))
 	items, err = arr.GetInRange(0, 4) // left partial
 	require.NoError(t, err)
-	require.EqualValues(t, []uint32{1, 2, 3, 4}, sorted_numeric_streams.ToSlice(items))
+	require.EqualValues(t, []uint32{1, 2, 3, 4}, SortedArrayStream.ToSlice(items))
 	items, err = arr.GetInRange(4, 100) // right partial
 	require.NoError(t, err)
-	require.EqualValues(t, []uint32{4, 5}, sorted_numeric_streams.ToSlice(items))
+	require.EqualValues(t, []uint32{4, 5}, SortedArrayStream.ToSlice(items))
 	items, err = arr.GetInRange(1, 2) // inner
 	require.NoError(t, err)
-	require.EqualValues(t, []uint32{1, 2}, sorted_numeric_streams.ToSlice(items))
+	require.EqualValues(t, []uint32{1, 2}, SortedArrayStream.ToSlice(items))
 
 	// Delete
 	err = arr.Delete([]uint32{1, 3, 9}) // remove real and absent
 	require.NoError(t, err)
 	err = arr.Delete([]uint32{1, 3, 9}) // idempotency
 	require.NoError(t, err)
+	arr.Flush()
 	require.EqualValues(t, []uint32{2, 4, 5}, arr.ToSlice())
 }

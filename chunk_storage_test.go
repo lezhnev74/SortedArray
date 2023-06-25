@@ -1,4 +1,4 @@
-package sorted_array
+package SortedArray
 
 import (
 	"github.com/stretchr/testify/require"

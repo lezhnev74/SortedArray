@@ -1,10 +1,11 @@
-package sorted_array
+package SortedArray
 
 import (
 	"fmt"
 	sorted_numeric_streams "github.com/lezhnev74/SetOperationsOnSortedNumericStreams"
 	"golang.org/x/exp/maps"
 	"math"
+	"sync"
 )
 
 var (
@@ -16,6 +17,7 @@ var (
 // Chunks contain up to maxInsertSize items and may not intersect with each other
 type SortedArray struct {
 	maxChunkSize uint32
+	chunksLock   sync.Mutex
 	loadedChunks map[uint32]*Chunk
 	dirtyChunks  map[uint32]struct{} // which loadedChunks are pending flushing
 	meta         Meta                // sorted array
@@ -35,13 +37,17 @@ func (a *SortedArray) GetInRange(min, max uint32) (sorted_numeric_streams.Sorted
 		defer result.Close()
 		// 2. Iterate over all chunks in order and push items to the outbound stream
 		for _, cm := range relevantChunkMeta {
-			a.loadMissingChunks([]uint32{cm.id}) // load the chunk
+			err := a.loadChunks([]uint32{cm.id}) // load the chunk
+			fmt.Printf("loaded chunk: %v\n", a.loadedChunks[cm.id])
+			if err != nil {
+				panic(err)
+			}
 			for _, item := range a.loadedChunks[cm.id].Items {
 				if item >= min && item <= max {
 					result.Push(item)
 				}
 			}
-			delete(a.loadedChunks, cm.id) // free the chunk
+			a.releaseChunks([]uint32{cm.id})
 		}
 	}()
 	return result, nil
@@ -55,7 +61,7 @@ func (a *SortedArray) Delete(items []uint32) error {
 		return err
 	}
 	// 2. Load missing chunks
-	err = a.loadMissingChunks(maps.Keys(plan))
+	err = a.loadChunks(maps.Keys(plan))
 	if err != nil {
 		return err
 	}
@@ -112,7 +118,7 @@ func (a *SortedArray) Add(items []uint32) error {
 		return err
 	}
 	// 2. Load missing chunks
-	err = a.loadMissingChunks(maps.Keys(plan))
+	err = a.loadChunks(maps.Keys(plan))
 	if err != nil {
 		return err
 	}
@@ -148,7 +154,7 @@ func (a *SortedArray) ToSlice() []uint32 {
 		size += cm.size
 		ids = append(ids, cm.id)
 	}
-	a.loadMissingChunks(ids)
+	a.loadChunks(ids)
 	ret := make([]uint32, 0, size)
 	for _, cm := range a.meta.chunks {
 		chunk := a.loadedChunks[cm.id]
@@ -226,8 +232,10 @@ func (a *SortedArray) createChunkFor(items []uint32) uint32 {
 	return chunkId
 }
 
-// loadMissingChunks checks which chunks are not in memory and loads them from the storage
-func (a *SortedArray) loadMissingChunks(ids []uint32) error {
+// loadChunks checks which chunks are not in memory and loads them from the storage
+func (a *SortedArray) loadChunks(ids []uint32) error {
+	a.chunksLock.Lock()
+	defer a.chunksLock.Unlock()
 	// 1. remove already loaded
 	i := 0
 	for _, id := range ids {
@@ -245,6 +253,15 @@ func (a *SortedArray) loadMissingChunks(ids []uint32) error {
 	// 3. merge with the existing load
 	maps.Copy(a.loadedChunks, loaded)
 	return nil
+}
+
+// releaseChunks removes pointers to chunk instances for later GC
+func (a *SortedArray) releaseChunks(ids []uint32) {
+	a.chunksLock.Lock()
+	defer a.chunksLock.Unlock()
+	for _, id := range ids {
+		delete(a.loadedChunks, id)
+	}
 }
 
 func (a *SortedArray) Flush() {
@@ -307,7 +324,7 @@ func (a *SortedArray) merge() {
 	for _, cms := range plan {
 		chunkIds = append(chunkIds, cms[0].id, cms[1].id)
 	}
-	a.loadMissingChunks(chunkIds)
+	a.loadChunks(chunkIds)
 
 	// 3. merge
 	removeChunkIds := make([]uint32, 0, len(plan))
@@ -347,6 +364,7 @@ func (a *SortedArray) initMeta() {
 
 func NewSortedArray(maxChunkSize uint32, s ChunkStorage) *SortedArray {
 	return &SortedArray{
+		chunksLock:   sync.Mutex{},
 		loadedChunks: make(map[uint32]*Chunk),
 		dirtyChunks:  make(map[uint32]struct{}),
 		maxChunkSize: maxChunkSize,

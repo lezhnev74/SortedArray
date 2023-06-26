@@ -283,7 +283,7 @@ func (a *SortedArray) releaseChunks(ids []uint32) {
 	}
 }
 
-func (a *SortedArray) Flush() {
+func (a *SortedArray) Flush() error {
 	if a.dirtyMeta {
 		a.dirtyMeta = false
 		a.storage.SaveMeta(a.meta)
@@ -294,7 +294,7 @@ func (a *SortedArray) Flush() {
 		delete(a.dirtyChunks, id)
 		delete(a.loadedChunks, id) // free the chunk
 	}
-	a.storage.Save(chunksToSave)
+	return a.storage.Save(chunksToSave)
 }
 
 // split detects Too Big chunks based on Meta and split those

@@ -68,10 +68,10 @@ func NewInMemoryChunkStorage() *InMemoryChunkStorage {
 	}
 }
 
-// SortedArraySqliteTxStorage implemented sorted array storage for sqlite
+// SortedArraySqlTxStorage implemented sorted array storage for sqlite
 // it uses blobs to store chunks and meta
 // key is used to produce unique ids for the blobs in a shared table
-type SortedArraySqliteTxStorage struct {
+type SortedArraySqlTxStorage struct {
 	key []byte // id of the array in the storage
 	// SQLite is NOT threadsafe for writes, so any write can actually return "table is locked"
 	// so to mitigate this it is better to start transaction IMMEDIATELY (instead of lazy transactions)
@@ -82,7 +82,7 @@ type SortedArraySqliteTxStorage struct {
 	preparedRead   *sql.Stmt
 }
 
-func (s *SortedArraySqliteTxStorage) Read(chunkIds []uint32) (map[uint32]*Chunk, error) {
+func (s *SortedArraySqlTxStorage) Read(chunkIds []uint32) (map[uint32]*Chunk, error) {
 	ret := make(map[uint32]*Chunk, 0)
 	for _, id := range chunkIds {
 		r := s.preparedRead.QueryRow(s.chunkId(id))
@@ -100,7 +100,7 @@ func (s *SortedArraySqliteTxStorage) Read(chunkIds []uint32) (map[uint32]*Chunk,
 	}
 	return ret, nil
 }
-func (s *SortedArraySqliteTxStorage) Save(chunks map[uint32]*Chunk) error {
+func (s *SortedArraySqlTxStorage) Save(chunks map[uint32]*Chunk) error {
 	for id, chunk := range chunks {
 		chunkSerialized, err := chunk.Serialize()
 		if err != nil {
@@ -110,7 +110,7 @@ func (s *SortedArraySqliteTxStorage) Save(chunks map[uint32]*Chunk) error {
 	}
 	return nil
 }
-func (s *SortedArraySqliteTxStorage) Remove(chunkIds []uint32) error {
+func (s *SortedArraySqlTxStorage) Remove(chunkIds []uint32) error {
 	for _, id := range chunkIds {
 		_, err := s.preparedRemove.Exec(id)
 		if err != nil {
@@ -119,7 +119,7 @@ func (s *SortedArraySqliteTxStorage) Remove(chunkIds []uint32) error {
 	}
 	return nil
 }
-func (s *SortedArraySqliteTxStorage) ReadMeta() (*Meta, error) {
+func (s *SortedArraySqlTxStorage) ReadMeta() (*Meta, error) {
 	r := s.preparedRead.QueryRow(s.key)
 	var serialized []byte
 	err := r.Scan(&serialized)
@@ -131,7 +131,7 @@ func (s *SortedArraySqliteTxStorage) ReadMeta() (*Meta, error) {
 	}
 	return UnserializeMeta(serialized)
 }
-func (s *SortedArraySqliteTxStorage) SaveMeta(meta *Meta) error {
+func (s *SortedArraySqlTxStorage) SaveMeta(meta *Meta) error {
 	serialized, err := meta.Serialize()
 	if err != nil {
 		return err
@@ -139,12 +139,12 @@ func (s *SortedArraySqliteTxStorage) SaveMeta(meta *Meta) error {
 	s.preparedUpsert.Exec(s.key, serialized)
 	return nil
 }
-func (a *SortedArraySqliteTxStorage) chunkId(id uint32) []byte {
+func (a *SortedArraySqlTxStorage) chunkId(id uint32) []byte {
 	return []byte(fmt.Sprintf("%s_%d", a.key, id))
 }
 
-func NewSqliteTxSortedArrayStorage(tx *sql.Tx, key []byte) *SortedArraySqliteTxStorage {
-	prepWrite, err := tx.Prepare("REPLACE INTO sorted_array_chunks(key,chunk) VALUES(?,?)")
+func NewSqliteTxSortedArrayStorage(tx *sql.Tx, key []byte) *SortedArraySqlTxStorage {
+	prepWrite, err := tx.Prepare("INSERT OR REPLACE INTO sorted_array_chunks(key,chunk) VALUES(?,?)")
 	if err != nil {
 		panic(err)
 	}
@@ -156,7 +156,7 @@ func NewSqliteTxSortedArrayStorage(tx *sql.Tx, key []byte) *SortedArraySqliteTxS
 	if err != nil {
 		panic(err)
 	}
-	return &SortedArraySqliteTxStorage{
+	return &SortedArraySqlTxStorage{
 		key:            key,
 		tx:             tx,
 		preparedRemove: prepRemove,
